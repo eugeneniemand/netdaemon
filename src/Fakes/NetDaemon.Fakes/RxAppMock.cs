@@ -120,8 +120,8 @@ namespace NetDaemon.Daemon.Fakes
         /// <param name="newState">New state</param>
         public void TriggerStateChange(EntityState oldState, EntityState newState)
         {
-            var state = MockState.First(entity => entity.EntityId == newState.EntityId);
-            var index = MockState.IndexOf(state);
+            var state = MockState.FirstOrDefault(entity => entity.EntityId == newState.EntityId);
+            var index = MockState.IndexOf(state!);
 
             if (index != -1)
                 MockState[index] = newState;
