@@ -189,9 +189,9 @@ namespace NetDaemon.Daemon.Fakes
                     try
                     {
                         if (token is null)
-                            return observable.Timeout(timeout).Take(1).Wait();
+                            return observable.Timeout(timeout, TestScheduler).Take(1).Wait();
                         else
-                            return observable.Timeout(timeout).Take(1).RunAsync(token.Value).Wait();
+                            return observable.Timeout(timeout, TestScheduler).Take(1).RunAsync(token.Value).Wait();
                     }
                     catch (TimeoutException)
                     {
