@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reactive.Linq;
+using System.Threading;
 using Microsoft.Reactive.Testing;
 
 namespace NetDaemon.Daemon.Fakes
@@ -162,6 +163,47 @@ namespace NetDaemon.Daemon.Fakes
                     Observable.Timer(span, TestScheduler)
                         .Subscribe(_ => action());
                 });
+
+            // Observable Extension Methods Setups
+            Mock<IObservableExtensionMethods> obsExtMock = new();
+            obsExtMock
+                .Setup(e => e.NDSameStateFor(It.IsAny<IObservable<(EntityState Old, EntityState New)>>(), It.IsAny<TimeSpan>()))
+                .Returns<IObservable<(EntityState Old, EntityState New)>, TimeSpan>((observable, span) => observable.Throttle(span, TestScheduler));
+ 
+            obsExtMock
+                .Setup(e => e.NDWaitForState(It.IsAny<IObservable<(EntityState Old, EntityState New)>>(), It.IsAny<TimeSpan>()))
+                .Returns<IObservable<(EntityState Old, EntityState New)>, TimeSpan>((observable, timeout) => observable
+                    .Timeout(timeout,
+                        Observable.Return((new EntityState() { State = "TimeOut" }, new EntityState() { State = "TimeOut" })), TestScheduler).Take(1));
+
+            obsExtMock
+                .Setup(e => e.NDWaitForState(It.IsAny<IObservable<(EntityState Old, EntityState New)>>()))
+                .Returns<IObservable<(EntityState Old, EntityState New)>>((observable) => observable
+                    .Timeout(TimeSpan.FromSeconds(5),
+                        Observable.Return((new EntityState() { State = "TimeOut" }, new EntityState() { State = "TimeOut" })),TestScheduler).Take(1));
+
+            obsExtMock
+                .Setup(e => e.NDFirstOrTimeout(It.IsAny<IObservable<(EntityState Old, EntityState New)>>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .Returns<IObservable<(EntityState Old, EntityState New)>, TimeSpan, CancellationToken?>((observable, timeout, token) =>
+                {
+                    try
+                    {
+                        if (token is null)
+                            return observable.Timeout(timeout).Take(1).Wait();
+                        else
+                            return observable.Timeout(timeout).Take(1).RunAsync(token.Value).Wait();
+                    }
+                    catch (TimeoutException)
+                    {
+                        return null;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return null;
+                    }
+                });
+
+            ObservableExtensionMethods.Implementation = obsExtMock.Object;
         }
 
         private void UpdateMockState(string[] entityIds, string newState, object? attributes)

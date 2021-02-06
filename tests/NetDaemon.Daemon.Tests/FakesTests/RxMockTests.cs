@@ -1,7 +1,9 @@
 using System;
 using System.Linq;
 using System.Reactive.Linq;
+using System.Threading;
 using Moq;
+using NetDaemon.Common;
 using NetDaemon.Daemon.Fakes;
 using Xunit;
 using NetDaemon.Common.Reactive;
@@ -211,6 +213,75 @@ namespace NetDaemon.Daemon.Tests.Reactive
 
             // ASSERT
             VerifyEntityTurnOn("binary_sensor.fake_run_daily_happened", times: Times.Exactly(2));
+        }
+
+        [Fact]
+        public void TestNDSameStateFor()
+        {
+            // ARRANGE
+            MockState.Add(new() { EntityId = "binary_sensor.test_entity", State = "off"});
+            
+            Object.Entity("binary_sensor.test_entity").StateChanges
+                .Where(e => e.New?.State == "on")
+                .NDSameStateFor(TimeSpan.FromMinutes(10))
+                .Subscribe(e =>
+                {
+                    Object.Entity("light.my_light").TurnOn();
+                });
+
+            Object.Entity("binary_sensor.test_entity").StateChanges
+                .Where(e => e.New?.State == "on")
+                .NDSameStateFor(TimeSpan.FromMinutes(20))
+                .Subscribe(e =>
+                {
+                    Object.Entity("light.my_light").TurnOff();
+                });
+
+            // ACT
+            TriggerStateChange("binary_sensor.test_entity", "off", "on");
+            TestScheduler.AdvanceBy(TimeSpan.FromMinutes(10).Ticks);
+            TestScheduler.AdvanceBy(TimeSpan.FromMinutes(20).Ticks);
+
+            // ASSERT
+            VerifyEntityTurnOn("light.my_light", times: Times.Exactly(1));
+            VerifyEntityTurnOff("light.my_light", times: Times.Exactly(1));
+        }
+
+        [Fact]
+        public void TestNDFirstOrTimeoutIsNull()
+        {
+            // ARRANGE
+            MockState.Add(new() { EntityId = "binary_sensor.pir", State = "off" });
+
+            var res = Object.Entity("binary_sensor.pir").StateChanges
+                .Where(e => e.New?.State == "on")
+                .NDFirstOrTimeout(TimeSpan.FromMinutes(5));
+            
+            // ACT
+            TestScheduler.AdvanceBy(TimeSpan.FromMinutes(5).Ticks);
+
+            // ASSERT
+            Assert.Null(res);
+        }
+
+        [Fact]
+        public void TestNDFirstOrTimeoutIsNotNull()
+        {
+            // ARRANGE
+            MockState.Add(new() { EntityId = "binary_sensor.pir", State = "off" });
+
+            var res = Object.Entity("binary_sensor.pir")
+                .StateChanges
+                .Where(e => e.New?.State == "on")
+                .NDFirstOrTimeout(TimeSpan.FromSeconds(5), new CancellationToken());
+
+            // ACT
+            TestScheduler.AdvanceBy(TimeSpan.FromMilliseconds(1).Ticks);
+            TriggerStateChange("binary_sensor.pir", "off", "on");
+            TestScheduler.AdvanceBy(TimeSpan.FromMilliseconds(4).Ticks);
+
+            // ASSERT
+            Assert.NotNull(res);
         }
 
         [Fact]

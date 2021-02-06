@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Reactive.Linq;
 using System.Threading;
 
 namespace NetDaemon.Common.Reactive
@@ -9,6 +8,22 @@ namespace NetDaemon.Common.Reactive
     /// </summary>
     public static class ObservableExtensionMethods
     {
+        // This implementation switching is to make the extension methods testable/mockable and is based of this article https://codethug.com/2017/09/09/Mocking-Extension-Methods/
+
+        private static readonly IObservableExtensionMethods DefaultImplementation = new ObservableExtensionMethodsWrapper();
+        /// <summary>
+        /// This is to allow setting the Implementation that is used to allow testing/mocking 
+        /// </summary>
+        public static IObservableExtensionMethods Implementation { get; set; } = DefaultImplementation;
+
+        /// <summary>
+        /// To clean up after your test by removing the mock. If you don’t do this, your mock will stick around in the ObservableExtensionMethods class because it’s static.
+        /// </summary>
+        public static void RevertToDefaultImplementation()
+        {
+            Implementation = DefaultImplementation;
+        }
+
         /// <summary>
         ///     Is same for timespan time
         /// </summary>
@@ -16,7 +31,7 @@ namespace NetDaemon.Common.Reactive
         /// <param name="span"></param>
         public static IObservable<(EntityState Old, EntityState New)> NDSameStateFor(this IObservable<(EntityState Old, EntityState New)> observable, TimeSpan span)
         {
-            return observable.Throttle(span);
+            return Implementation.NDSameStateFor(observable, span);
         }
 
         /// <summary>
@@ -26,18 +41,17 @@ namespace NetDaemon.Common.Reactive
         /// <param name="timeout">Timeout waiting for state</param>
         public static IObservable<(EntityState Old, EntityState New)> NDWaitForState(this IObservable<(EntityState Old, EntityState New)> observable, TimeSpan timeout)
         {
-            return observable
-                .Timeout(timeout,
-                Observable.Return((new EntityState() { State = "TimeOut" }, new EntityState() { State = "TimeOut" }))).Take(1);
+            return Implementation.NDWaitForState(observable, timeout);
         }
 
         /// <summary>
         ///     Wait for state the default time
         /// </summary>
         /// <param name="observable"></param>
-        public static IObservable<(EntityState Old, EntityState New)> NDWaitForState(this IObservable<(EntityState Old, EntityState New)> observable) => observable
-            .Timeout(TimeSpan.FromSeconds(5),
-            Observable.Return((new EntityState() { State = "TimeOut" }, new EntityState() { State = "TimeOut" }))).Take(1);
+        public static IObservable<(EntityState Old, EntityState New)> NDWaitForState(this IObservable<(EntityState Old, EntityState New)> observable)
+        {
+            return Implementation.NDWaitForState(observable);
+        }
 
         /// <summary>
         ///     Returns first occurence or null if timedout
@@ -47,21 +61,7 @@ namespace NetDaemon.Common.Reactive
         /// <param name="token">Provide token to cancel early</param>
         public static (EntityState Old, EntityState New)? NDFirstOrTimeout(this IObservable<(EntityState Old, EntityState New)> observable, TimeSpan timeout, CancellationToken? token = null)
         {
-            try
-            {
-                if (token is null)
-                    return observable.Timeout(timeout).Take(1).Wait();
-                else
-                    return observable.Timeout(timeout).Take(1).RunAsync(token.Value).Wait();
-            }
-            catch (TimeoutException)
-            {
-                return null;
-            }
-            catch (OperationCanceledException)
-            {
-                return null;
-            }
+            return Implementation.NDFirstOrTimeout(observable, timeout, token);
         }
     }
 }
